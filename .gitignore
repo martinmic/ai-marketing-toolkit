@@ -17,3 +17,5 @@ secret.txt
 *.log
 logs/
 research.log
+
+.vscode/
