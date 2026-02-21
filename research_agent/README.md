@@ -61,7 +61,7 @@ cd ai-marketing-toolkit/examples/fda_510k_research/
 ./run_fda_batch.py --limit 10 --verbose
 ```
 
-The results are saved to fda_research_results.csv in the same directory. This CSV file will contain 5 columns with the discovered data (knumber, applicant, contact, email, source).
+The results are saved to fda_research_results.csv in the same directory. This CSV file will contain discovered data including `knumber`, `fda_id`, `company`, `person`, `product`, `email`, and `source`.
 
 Customization Options:
 

@@ -6,10 +6,8 @@ Uses a dual-model AI pipeline (Gemini + OpenAI) to find verified contact
 info for stakeholders based on Name, Product, and Company inputs.
 """
 
-# TODO: Add Supabase integration to store verified stakeholders
-# TODO: Implement retry logic if Gemini times out using MAX_GEMINI_RETRIES
-
 import os
+import time
 from openai import OpenAI
 from typing import Optional
 from pydantic import BaseModel
@@ -35,7 +33,8 @@ client_openai = OpenAI()
 # Gemini 3 Flash Thinking Level (adjust as needed)
 # - available options: minimal/low/medium/high
 # - for more info visit: https://ai.google.dev/gemini-api/docs/thinking
-GENAI_THINKING_LEVEL = "medium" 
+GENAI_THINKING_LEVEL = "minimal" 
+MAX_GEMINI_RETRIES = 3
 
 # -----------------------------
 # Logging setup
@@ -174,13 +173,29 @@ def call_gemini(query: str, mode: str) -> str:
         thinking_config=types.ThinkingConfig(thinking_level=GENAI_THINKING_LEVEL)
     )
 
-    response = client_google.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=query,
-        config=config
-    )
+    for attempt in range(1, MAX_GEMINI_RETRIES + 1):
+        try:
+            response = client_google.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=query,
+                config=config
+            )
+            return response.text
+        except Exception as exc:
+            error_text = f"{type(exc).__name__}: {exc}".lower()
+            is_timeout = isinstance(exc, TimeoutError) or any(
+                token in error_text for token in ("timeout", "timed out", "deadline exceeded", "504")
+            )
+            if not is_timeout or attempt >= MAX_GEMINI_RETRIES:
+                raise
+            logger.warning(
+                "Gemini timeout on attempt %s/%s for mode '%s'; retrying.",
+                attempt,
+                MAX_GEMINI_RETRIES,
+                mode,
+            )
 
-    return response.text
+    return ""
 
 
 # -----------------------------
@@ -237,12 +252,23 @@ def call_gpt_for_evaluation(query: str, raw_text: str) -> EmailExtraction:
 # Controller (orchestration)
 # -----------------------------
 
-def research_contact(name, company, product, verbose=False):
+def research_contact(name, company, product, verbose=False, return_timing=False):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = f"logs/{timestamp}"
     os.makedirs(run_dir, exist_ok=True)
 
     logger.info(f"NEW RESEARCH: Target='{name}', Company='{company}', Product='{product}'")
+    total_start = time.perf_counter()
+    timing_data = {
+        "total_s": 0.0,
+        "modes": {}
+    }
+
+    def finalize(result):
+        timing_data["total_s"] = time.perf_counter() - total_start
+        if return_timing:
+            return result, timing_data
+        return result
 
     modes = ["name_company", "product_company", "company_fallback"]
     os.makedirs("logs", exist_ok=True)
@@ -252,18 +278,28 @@ def research_contact(name, company, product, verbose=False):
         if mode == "name_company":
             query = f"Name: {name}, Company: {company}"
         elif mode == "product_company":
-            if not product: continue # skip product mode if no product was provided
+            if not product:
+                timing_data["modes"][mode] = {"skipped": True}
+                continue  # skip product mode if no product was provided
             query = f"Product: {product}, Company: {company}"
         else:  # company_fallback
             query = f"Company: {company}"
 
+        gemini_start = time.perf_counter()
         raw_text = call_gemini(query, mode)
+        gemini_duration_s = time.perf_counter() - gemini_start
 
         # write Gemini raw output to a mode-specific file
         with open(f"{run_dir}/gemini_{mode}.txt", "w", encoding="utf-8") as f:
             f.write(raw_text or "")
 
+        gpt_start = time.perf_counter()
         response = call_gpt_for_evaluation(query, raw_text)
+        gpt_duration_s = time.perf_counter() - gpt_start
+        timing_data["modes"][mode] = {
+            "gemini_s": gemini_duration_s,
+            "gpt_s": gpt_duration_s
+        }
 
         log_msg = f"EVAL: Mode={mode} | Found={response.email_found} | Email={response.email_address}"
         logger.info(log_msg)
@@ -273,10 +309,10 @@ def research_contact(name, company, product, verbose=False):
                 f.write(response.model_dump_json(indent=2))
 
             logger.info(f"SUCCESS: Lead found in mode '{mode}' ({run_dir})")
-            return response
+            return finalize(response)
 
     logger.warning(f"FAILURE: No contact found for '{name}' ({run_dir})")
-    return None
+    return finalize(None)
 
 if __name__ == "__main__":
     import argparse
@@ -302,5 +338,3 @@ if __name__ == "__main__":
     else:
         print("No verified contact info found.")
         exit(1)
-
-
