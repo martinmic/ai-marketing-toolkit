@@ -38,14 +38,14 @@ def format_timing_line(timing_data):
     return "Timing: " + " | ".join(parts)
 
 
-def normalize_record_id(value):
+def normalize_id(value):
     if pd.isna(value):
         return None
     normalized = str(value).strip()
     return normalized or None
 
 
-def fetch_existing_record_ids(table_name, supabase_url=None, service_role_key=None):
+def fetch_existing_ids(table_name, supabase_url=None, service_role_key=None):
     supabase_url = supabase_url or os.getenv("SUPABASE_URL")
     service_role_key = service_role_key or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
@@ -86,9 +86,9 @@ def fetch_existing_record_ids(table_name, supabase_url=None, service_role_key=No
             break
 
         for row in rows:
-            record_id = normalize_record_id(row.get("user_id"))
-            if record_id:
-                existing_ids.add(record_id)
+            lead_id = normalize_id(row.get("user_id"))
+            if lead_id:
+                existing_ids.add(lead_id)
 
         if len(rows) < page_size:
             break
@@ -173,7 +173,7 @@ def normalize_input_records(df):
             non_us_skipped += 1
             continue
 
-        record_id = get_first_present_value(row, ["id", "record_id"])
+        lead_id = get_first_present_value(row, ["id"])
         company = get_first_present_value(row, ["company", "applicant", "APPLICANT"])
         person = get_first_present_value(row, ["person", "contact", "CONTACT"])
         product = get_first_present_value(row, ["product", "device_name", "DEVICENAME"])
@@ -183,7 +183,7 @@ def normalize_input_records(df):
 
         normalized_rows.append(
             {
-                "record_id": normalize_record_id(record_id),
+                "id": normalize_id(lead_id),
                 "company": company,
                 "person": person,
                 "product": product,
@@ -226,12 +226,12 @@ def process_product_research_list(
         normalized_rows = normalized_rows[:limit]
         print(f"Limiting processing to first {limit} entries.")
 
-    existing_record_ids = set()
+    existing_ids = set()
     supabase_endpoint = None
     supabase_headers = None
     if output_mode == "supabase":
         try:
-            existing_record_ids = fetch_existing_record_ids(
+            existing_ids = fetch_existing_ids(
                 table_name=table_name,
                 supabase_url=supabase_url,
                 service_role_key=service_role_key,
@@ -241,9 +241,9 @@ def process_product_research_list(
                 supabase_url=supabase_url,
                 service_role_key=service_role_key,
             )
-            print(f"Loaded {len(existing_record_ids)} existing record IDs from Supabase.")
+            print(f"Loaded {len(existing_ids)} existing IDs from Supabase.")
         except Exception as e:
-            print(f"Error loading existing record IDs: {e}")
+            print(f"Error loading existing IDs: {e}")
             return
 
     results = []
@@ -258,15 +258,15 @@ def process_product_research_list(
         company = row["company"]
         person = row["person"]
         product = row["product"]
-        record_id = row["record_id"]
+        lead_id = row["id"]
 
-        if output_mode == "supabase" and record_id and record_id in existing_record_ids:
+        if output_mode == "supabase" and lead_id and lead_id in existing_ids:
             skipped_existing += 1
-            print(f"\nSkipping: {person} ({company}) - already processed (ID: {record_id})")
+            print(f"\nSkipping: {person} ({company}) - already processed (ID: {lead_id})")
             continue
 
         print(f"\nResearching: {person} ({company})")
-        print(f"   Product: {product} (ID: {record_id})")
+        print(f"   Product: {product} (ID: {lead_id})")
 
         try:
             if test_mode:
@@ -288,14 +288,14 @@ def process_product_research_list(
                     llm_max_retries=llm_max_retries,
                 )
             print(f"   {format_timing_line(timing_data)}")
-            timing_rows.append({"record_id": record_id, "timing": timing_data})
+            timing_rows.append({"id": lead_id, "timing": timing_data})
 
             if result and result.email_found:
                 found_count += 1
                 print(f"   SUCCESS: {result.email_address}")
                 result_row = {
-                    "record_id": record_id,
-                    "user_id": record_id,
+                    "id": lead_id,
+                    "user_id": lead_id,
                     "company": company,
                     "person": person,
                     "product": product,
@@ -312,12 +312,12 @@ def process_product_research_list(
                     )
                     if write_status == "inserted":
                         inserted += 1
-                        if record_id:
-                            existing_record_ids.add(record_id)
+                        if lead_id:
+                            existing_ids.add(lead_id)
                     elif write_status == "duplicate":
                         duplicates += 1
-                        if record_id:
-                            existing_record_ids.add(record_id)
+                        if lead_id:
+                            existing_ids.add(lead_id)
                     else:
                         failed += 1
             else:
@@ -348,12 +348,12 @@ def process_product_research_list(
         avg_total = sum(total_values) / len(total_values) if total_values else 0.0
         avg_gemini = sum(gemini_values) / len(gemini_values) if gemini_values else 0.0
         avg_gpt = sum(gpt_values) / len(gpt_values) if gpt_values else 0.0
-        slowest_id = slowest_row["record_id"] or "unknown"
+        slowest_id = slowest_row["id"] or "unknown"
         slowest_s = slowest_row["timing"].get("total_s", 0.0)
         print(
             f"Timing Summary: contacts={len(timing_rows)} | avg_total={avg_total:.2f}s | "
             f"avg_gemini={avg_gemini:.2f}s | avg_gpt={avg_gpt:.2f}s | "
-            f"slowest_record_id={slowest_id} ({slowest_s:.2f}s)"
+            f"slowest_id={slowest_id} ({slowest_s:.2f}s)"
         )
     print("="*40)
 

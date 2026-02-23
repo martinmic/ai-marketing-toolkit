@@ -61,7 +61,7 @@ cd ai-marketing-toolkit/examples/product_research/
 ./batch_run.py --limit 10
 ```
 
-The results are saved to `research_results.csv` in the same directory. This CSV file contains discovered data including `record_id`, `company`, `person`, `product`, `email`, and `source`.
+The results are saved to `research_results.csv` in the same directory. This CSV file contains discovered data including `id`, `company`, `person`, `product`, `email`, and `source`.
 
 Customization Options:
 
