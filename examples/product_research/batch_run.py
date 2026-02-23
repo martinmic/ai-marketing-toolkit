@@ -61,8 +61,8 @@ def fetch_existing_record_ids(table_name, supabase_url=None, service_role_key=No
         "Range-Unit": "items",
     }
     params = {
-        "select": "fda_id",
-        "fda_id": "not.is.null",
+        "select": "user_id",
+        "user_id": "not.is.null",
     }
 
     existing_ids = set()
@@ -86,7 +86,7 @@ def fetch_existing_record_ids(table_name, supabase_url=None, service_role_key=No
             break
 
         for row in rows:
-            record_id = normalize_record_id(row.get("fda_id"))
+            record_id = normalize_record_id(row.get("user_id"))
             if record_id:
                 existing_ids.add(record_id)
 
@@ -127,7 +127,7 @@ def insert_result_to_supabase(row, endpoint, headers):
         "company": row["company"],
         "person": row["person"],
         "product": row["product"],
-        "fda_id": row.get("fda_id") or row.get("id"),
+        "user_id": row.get("user_id") or row.get("id"),
         "email": row["email"],
         "source": row["source"],
     }
@@ -198,7 +198,7 @@ def process_product_research_list(
     limit=None,
     output_mode="csv",
     output_path="research_results.csv",
-    table_name="fda510k_leads",
+    table_name="product_leads",
     supabase_url=None,
     service_role_key=None,
     test_mode=False,
@@ -295,7 +295,7 @@ def process_product_research_list(
                 print(f"   SUCCESS: {result.email_address}")
                 result_row = {
                     "record_id": record_id,
-                    "fda_id": record_id,
+                    "user_id": record_id,
                     "company": company,
                     "person": person,
                     "product": product,
@@ -386,7 +386,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--supabase-table",
-        default="fda510k_leads",
+        default="product_leads",
         help="Supabase table name when --output-mode=supabase",
     )
     parser.add_argument(
