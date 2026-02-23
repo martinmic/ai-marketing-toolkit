@@ -16,6 +16,7 @@ secret.txt
 # Logs and Research Artifacts
 *.log
 logs/
+testing/
 research.log
 
 .vscode/

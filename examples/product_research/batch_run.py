@@ -38,14 +38,14 @@ def format_timing_line(timing_data):
     return "Timing: " + " | ".join(parts)
 
 
-def normalize_fda_id(value):
+def normalize_record_id(value):
     if pd.isna(value):
         return None
     normalized = str(value).strip()
     return normalized or None
 
 
-def fetch_existing_fda_ids(table_name, supabase_url=None, service_role_key=None):
+def fetch_existing_record_ids(table_name, supabase_url=None, service_role_key=None):
     supabase_url = supabase_url or os.getenv("SUPABASE_URL")
     service_role_key = service_role_key or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
@@ -86,9 +86,9 @@ def fetch_existing_fda_ids(table_name, supabase_url=None, service_role_key=None)
             break
 
         for row in rows:
-            fda_id = normalize_fda_id(row.get("fda_id"))
-            if fda_id:
-                existing_ids.add(fda_id)
+            record_id = normalize_record_id(row.get("fda_id"))
+            if record_id:
+                existing_ids.add(record_id)
 
         if len(rows) < page_size:
             break
@@ -127,7 +127,7 @@ def insert_result_to_supabase(row, endpoint, headers):
         "company": row["company"],
         "person": row["person"],
         "product": row["product"],
-        "fda_id": row.get("fda_id") or row.get("knumber"),
+        "fda_id": row.get("fda_id") or row.get("id"),
         "email": row["email"],
         "source": row["source"],
     }
@@ -153,15 +153,57 @@ def insert_result_to_supabase(row, endpoint, headers):
     return "failed"
 
 
-def process_fda_list(
+def get_first_present_value(row, candidates):
+    for key in candidates:
+        value = row.get(key)
+        if pd.notna(value):
+            normalized = str(value).strip()
+            if normalized:
+                return normalized
+    return None
+
+
+def normalize_input_records(df):
+    normalized_rows = []
+    non_us_skipped = 0
+
+    for _, row in df.iterrows():
+        country_code = get_first_present_value(row, ["country_code", "COUNTRY_CODE"])
+        if country_code and country_code.upper() != "US":
+            non_us_skipped += 1
+            continue
+
+        record_id = get_first_present_value(row, ["id", "record_id"])
+        company = get_first_present_value(row, ["company", "applicant", "APPLICANT"])
+        person = get_first_present_value(row, ["person", "contact", "CONTACT"])
+        product = get_first_present_value(row, ["product", "device_name", "DEVICENAME"])
+
+        if not company or not person or not product:
+            continue
+
+        normalized_rows.append(
+            {
+                "record_id": normalize_record_id(record_id),
+                "company": company,
+                "person": person,
+                "product": product,
+            }
+        )
+
+    return normalized_rows, non_us_skipped
+
+
+def process_product_research_list(
     file_path,
     limit=None,
     output_mode="csv",
-    output_path="fda_research_results.csv",
+    output_path="research_results.csv",
     table_name="fda510k_leads",
     supabase_url=None,
     service_role_key=None,
     test_mode=False,
+    llm_timeout_seconds=60.0,
+    llm_max_retries=3,
 ):
     try:
         df = pd.read_csv(file_path, sep='\t', encoding='latin1')
@@ -170,23 +212,26 @@ def process_fda_list(
         return
 
     initial_count = len(df)
-    df = df[df['COUNTRY_CODE'] == 'US']
-    filtered_count = initial_count - len(df)
-    
-    print(f"Loaded {initial_count} records. Skipped {filtered_count} non-US entries.")
+    normalized_rows, non_us_skipped = normalize_input_records(df)
+    skipped_incomplete = initial_count - len(normalized_rows) - non_us_skipped
+
+    print(
+        f"Loaded {initial_count} records. "
+        f"Skipped {non_us_skipped} non-US and {max(skipped_incomplete, 0)} incomplete entries."
+    )
     if test_mode:
         print("Running in test mode: skipping research_contact and using placeholder@email.com")
 
     if limit is not None:
-        df = df.head(limit)
+        normalized_rows = normalized_rows[:limit]
         print(f"Limiting processing to first {limit} entries.")
 
-    existing_fda_ids = set()
+    existing_record_ids = set()
     supabase_endpoint = None
     supabase_headers = None
     if output_mode == "supabase":
         try:
-            existing_fda_ids = fetch_existing_fda_ids(
+            existing_record_ids = fetch_existing_record_ids(
                 table_name=table_name,
                 supabase_url=supabase_url,
                 service_role_key=service_role_key,
@@ -196,9 +241,9 @@ def process_fda_list(
                 supabase_url=supabase_url,
                 service_role_key=service_role_key,
             )
-            print(f"Loaded {len(existing_fda_ids)} existing fda_id values from Supabase.")
+            print(f"Loaded {len(existing_record_ids)} existing record IDs from Supabase.")
         except Exception as e:
-            print(f"Error loading existing fda_id values: {e}")
+            print(f"Error loading existing record IDs: {e}")
             return
 
     results = []
@@ -209,19 +254,19 @@ def process_fda_list(
     failed = 0
     timing_rows = []
 
-    for _, row in df.iterrows():
-        company = row['APPLICANT']
-        person = row['CONTACT']
-        product = row['DEVICENAME']
-        knumber = normalize_fda_id(row['KNUMBER'])
+    for row in normalized_rows:
+        company = row["company"]
+        person = row["person"]
+        product = row["product"]
+        record_id = row["record_id"]
 
-        if output_mode == "supabase" and knumber and knumber in existing_fda_ids:
+        if output_mode == "supabase" and record_id and record_id in existing_record_ids:
             skipped_existing += 1
-            print(f"\nSkipping: {person} ({company}) - already processed (FDA ID: {knumber})")
+            print(f"\nSkipping: {person} ({company}) - already processed (ID: {record_id})")
             continue
 
         print(f"\nResearching: {person} ({company})")
-        print(f"   Product: {product} (FDA ID: {knumber})")
+        print(f"   Product: {product} (ID: {record_id})")
 
         try:
             if test_mode:
@@ -239,16 +284,18 @@ def process_fda_list(
                     product=product, 
                     verbose=False,
                     return_timing=True,
+                    llm_timeout_seconds=llm_timeout_seconds,
+                    llm_max_retries=llm_max_retries,
                 )
             print(f"   {format_timing_line(timing_data)}")
-            timing_rows.append({"fda_id": knumber, "timing": timing_data})
+            timing_rows.append({"record_id": record_id, "timing": timing_data})
 
             if result and result.email_found:
                 found_count += 1
                 print(f"   SUCCESS: {result.email_address}")
                 result_row = {
-                    "knumber": knumber,
-                    "fda_id": knumber,
+                    "record_id": record_id,
+                    "fda_id": record_id,
                     "company": company,
                     "person": person,
                     "product": product,
@@ -265,12 +312,12 @@ def process_fda_list(
                     )
                     if write_status == "inserted":
                         inserted += 1
-                        if knumber:
-                            existing_fda_ids.add(knumber)
+                        if record_id:
+                            existing_record_ids.add(record_id)
                     elif write_status == "duplicate":
                         duplicates += 1
-                        if knumber:
-                            existing_fda_ids.add(knumber)
+                        if record_id:
+                            existing_record_ids.add(record_id)
                     else:
                         failed += 1
             else:
@@ -280,7 +327,7 @@ def process_fda_list(
             print(f"   WARNING: ERROR processing this entry: {e}")
 
     print("\n" + "="*40)
-    print(f"BATCH COMPLETE: Found {found_count} of {len(df)} attempts.")
+    print(f"BATCH COMPLETE: Found {found_count} of {len(normalized_rows)} attempts.")
     if output_mode == "supabase":
         print(f"Skipped existing in DB: {skipped_existing}")
         print(
@@ -301,12 +348,12 @@ def process_fda_list(
         avg_total = sum(total_values) / len(total_values) if total_values else 0.0
         avg_gemini = sum(gemini_values) / len(gemini_values) if gemini_values else 0.0
         avg_gpt = sum(gpt_values) / len(gpt_values) if gpt_values else 0.0
-        slowest_id = slowest_row["fda_id"] or "unknown"
+        slowest_id = slowest_row["record_id"] or "unknown"
         slowest_s = slowest_row["timing"].get("total_s", 0.0)
         print(
             f"Timing Summary: contacts={len(timing_rows)} | avg_total={avg_total:.2f}s | "
             f"avg_gemini={avg_gemini:.2f}s | avg_gpt={avg_gpt:.2f}s | "
-            f"slowest_fda_id={slowest_id} ({slowest_s:.2f}s)"
+            f"slowest_record_id={slowest_id} ({slowest_s:.2f}s)"
         )
     print("="*40)
 
@@ -314,8 +361,12 @@ def process_fda_list(
         save_results_to_csv(results, output_path)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="FDA 510(K) Contact Research Batch Tool")
-    parser.add_argument("--input", default="sample_input.txt", help="Path to tab-delimited FDA data")
+    parser = argparse.ArgumentParser(description="Product Research Batch Tool")
+    parser.add_argument(
+        "--input",
+        default="sample_input.txt",
+        help="Path to a tab-delimited contacts file (id, person, company, product).",
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -330,7 +381,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-path",
-        default="fda_research_results.csv",
+        default="research_results.csv",
         help="CSV output path when --output-mode=csv",
     )
     parser.add_argument(
@@ -353,10 +404,22 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip AI research and use placeholder@email.com for fast pipeline testing.",
     )
+    parser.add_argument(
+        "--llm-timeout-seconds",
+        type=float,
+        default=60.0,
+        help="Max seconds per Gemini/GPT call before timeout retry is triggered.",
+    )
+    parser.add_argument(
+        "--llm-max-retries",
+        type=int,
+        default=3,
+        help="Number of retries per Gemini/GPT call after timeout.",
+    )
 
     args = parser.parse_args()
 
-    process_fda_list(
+    process_product_research_list(
         file_path=args.input,
         limit=args.limit,
         output_mode=args.output_mode,
@@ -365,4 +428,6 @@ if __name__ == "__main__":
         supabase_url=args.supabase_url,
         service_role_key=args.supabase_service_role_key,
         test_mode=args.test_mode,
+        llm_timeout_seconds=args.llm_timeout_seconds,
+        llm_max_retries=args.llm_max_retries,
     )

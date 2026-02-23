@@ -8,8 +8,10 @@ info for stakeholders based on Name, Product, and Company inputs.
 
 import os
 import time
+import threading
 from openai import OpenAI
-from typing import Optional
+from queue import Queue
+from typing import Any, Callable, Optional
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
@@ -35,6 +37,8 @@ client_openai = OpenAI()
 # - for more info visit: https://ai.google.dev/gemini-api/docs/thinking
 GENAI_THINKING_LEVEL = "minimal" 
 MAX_GEMINI_RETRIES = 3
+DEFAULT_LLM_TIMEOUT_SECONDS = 60
+DEFAULT_LLM_MAX_RETRIES = MAX_GEMINI_RETRIES
 
 # -----------------------------
 # Logging setup
@@ -71,7 +75,7 @@ COMMON_TASK = """
 Search beyond the company website, including:
 - academic papers
 - NIH / PMC articles
-- FDA documents
+- regulatory filings and public datasets
 - patents
 - conference papers
 Use queries that may include the string "Email:", "gmail" and the provided company name.
@@ -154,7 +158,79 @@ Rules:
 # Gemini interface (web research)
 # -----------------------------
 
-def call_gemini(query: str, mode: str) -> str:
+class LLMCallTimeoutError(TimeoutError):
+    pass
+
+
+def is_timeout_error(exc: Exception) -> bool:
+    error_text = f"{type(exc).__name__}: {exc}".lower()
+    return isinstance(exc, TimeoutError) or any(
+        token in error_text for token in ("timeout", "timed out", "deadline exceeded", "504")
+    )
+
+
+def run_with_timeout(fn: Callable[[], Any], timeout_seconds: float):
+    result_queue = Queue(maxsize=1)
+
+    def target():
+        try:
+            result_queue.put(("ok", fn()))
+        except Exception as exc:
+            result_queue.put(("err", exc))
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+
+    if thread.is_alive():
+        raise LLMCallTimeoutError(f"LLM call exceeded timeout of {timeout_seconds}s")
+
+    status, payload = result_queue.get()
+    if status == "err":
+        raise payload
+    return payload
+
+
+def call_with_timeout_retries(
+    call_name: str,
+    fn: Callable[[], Any],
+    timeout_seconds: float,
+    max_retries: int,
+    mode: Optional[str] = None,
+):
+    max_attempts = max(0, int(max_retries)) + 1
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return run_with_timeout(fn, timeout_seconds)
+        except Exception as exc:
+            if not is_timeout_error(exc) or attempt >= max_attempts:
+                raise
+            if mode:
+                logger.warning(
+                    "%s timeout on attempt %s/%s for mode '%s'; retrying.",
+                    call_name,
+                    attempt,
+                    max_attempts,
+                    mode,
+                )
+            else:
+                logger.warning(
+                    "%s timeout on attempt %s/%s; retrying.",
+                    call_name,
+                    attempt,
+                    max_attempts,
+                )
+
+    raise RuntimeError(f"{call_name} retry loop exited unexpectedly")
+
+
+def call_gemini(
+    query: str,
+    mode: str,
+    llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS,
+    llm_max_retries: int = DEFAULT_LLM_MAX_RETRIES,
+) -> str:
     """
     Executes a web-discovery search using Google Gemini to surface contact data.
 
@@ -173,29 +249,21 @@ def call_gemini(query: str, mode: str) -> str:
         thinking_config=types.ThinkingConfig(thinking_level=GENAI_THINKING_LEVEL)
     )
 
-    for attempt in range(1, MAX_GEMINI_RETRIES + 1):
-        try:
-            response = client_google.models.generate_content(
-                model="gemini-3-flash-preview",
-                contents=query,
-                config=config
-            )
-            return response.text
-        except Exception as exc:
-            error_text = f"{type(exc).__name__}: {exc}".lower()
-            is_timeout = isinstance(exc, TimeoutError) or any(
-                token in error_text for token in ("timeout", "timed out", "deadline exceeded", "504")
-            )
-            if not is_timeout or attempt >= MAX_GEMINI_RETRIES:
-                raise
-            logger.warning(
-                "Gemini timeout on attempt %s/%s for mode '%s'; retrying.",
-                attempt,
-                MAX_GEMINI_RETRIES,
-                mode,
-            )
+    def do_call():
+        response = client_google.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=query,
+            config=config
+        )
+        return response.text
 
-    return ""
+    return call_with_timeout_retries(
+        call_name="Gemini",
+        fn=do_call,
+        timeout_seconds=llm_timeout_seconds,
+        max_retries=llm_max_retries,
+        mode=mode,
+    )
 
 
 # -----------------------------
@@ -215,7 +283,12 @@ class EmailExtraction(BaseModel):
     email_address: Optional[str] = None
     source_url: Optional[str] = None
 
-def call_gpt_for_evaluation(query: str, raw_text: str) -> EmailExtraction:
+def call_gpt_for_evaluation(
+    query: str,
+    raw_text: str,
+    llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS,
+    llm_max_retries: int = DEFAULT_LLM_MAX_RETRIES,
+) -> EmailExtraction:
     """
     Performs a cognitive evaluation of raw web-search data to extract
     and validate structured contact information.
@@ -239,20 +312,36 @@ def call_gpt_for_evaluation(query: str, raw_text: str) -> EmailExtraction:
         ---
     """
 
-    response = client_openai.responses.parse(
-        model="gpt-4.1",
-        instructions=GPT_SYSTEM_INSTRUCTIONS,
-        input=evaluation_input,
-        text_format=EmailExtraction
+    def do_call():
+        response = client_openai.responses.parse(
+            model="gpt-4.1",
+            instructions=GPT_SYSTEM_INSTRUCTIONS,
+            input=evaluation_input,
+            text_format=EmailExtraction
+        )
+        return response.output_parsed
+
+    return call_with_timeout_retries(
+        call_name="GPT",
+        fn=do_call,
+        timeout_seconds=llm_timeout_seconds,
+        max_retries=llm_max_retries,
     )
-    return response.output_parsed
 
 
 # -----------------------------
 # Controller (orchestration)
 # -----------------------------
 
-def research_contact(name, company, product, verbose=False, return_timing=False):
+def research_contact(
+    name,
+    company,
+    product,
+    verbose=False,
+    return_timing=False,
+    llm_timeout_seconds=DEFAULT_LLM_TIMEOUT_SECONDS,
+    llm_max_retries=DEFAULT_LLM_MAX_RETRIES,
+):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = f"logs/{timestamp}"
     os.makedirs(run_dir, exist_ok=True)
@@ -286,7 +375,12 @@ def research_contact(name, company, product, verbose=False, return_timing=False)
             query = f"Company: {company}"
 
         gemini_start = time.perf_counter()
-        raw_text = call_gemini(query, mode)
+        raw_text = call_gemini(
+            query=query,
+            mode=mode,
+            llm_timeout_seconds=llm_timeout_seconds,
+            llm_max_retries=llm_max_retries,
+        )
         gemini_duration_s = time.perf_counter() - gemini_start
 
         # write Gemini raw output to a mode-specific file
@@ -294,7 +388,12 @@ def research_contact(name, company, product, verbose=False, return_timing=False)
             f.write(raw_text or "")
 
         gpt_start = time.perf_counter()
-        response = call_gpt_for_evaluation(query, raw_text)
+        response = call_gpt_for_evaluation(
+            query=query,
+            raw_text=raw_text,
+            llm_timeout_seconds=llm_timeout_seconds,
+            llm_max_retries=llm_max_retries,
+        )
         gpt_duration_s = time.perf_counter() - gpt_start
         timing_data["modes"][mode] = {
             "gemini_s": gemini_duration_s,
@@ -321,6 +420,18 @@ if __name__ == "__main__":
     parser.add_argument("--name", required=True, help="Target's full name")
     parser.add_argument("--company", required=True, help="Target's company")
     parser.add_argument("--product", required=False, help="Associated product (optional)")
+    parser.add_argument(
+        "--llm-timeout-seconds",
+        type=float,
+        default=DEFAULT_LLM_TIMEOUT_SECONDS,
+        help="Max seconds per Gemini/GPT call before timeout retry is triggered.",
+    )
+    parser.add_argument(
+        "--llm-max-retries",
+        type=int,
+        default=DEFAULT_LLM_MAX_RETRIES,
+        help="Number of retries per Gemini/GPT call after timeout.",
+    )
 
     args = parser.parse_args()
     
@@ -328,7 +439,9 @@ if __name__ == "__main__":
         name=args.name,
         company=args.company,
         product=args.product,
-        verbose=True
+        verbose=True,
+        llm_timeout_seconds=args.llm_timeout_seconds,
+        llm_max_retries=args.llm_max_retries,
     )
 
     if result and result.email_found:

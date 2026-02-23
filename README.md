@@ -48,8 +48,8 @@ A collection of high-accuracy research and automation utilities designed for mod
 ### product_first_lead.py
 This script separates discovery from cognition to solve the common problem of LLM hallucinations in market research. Its purpose is to identify the specific human responsible for a product's success.
 
-### run_fda_batch.py
-Automates batch execution of `product_first_lead.py`. It ingests an input file containing person names, company names, and the associated FDA‑submitted product, then runs the research workflow for each record.
+### batch_run.py
+Automates batch execution of `product_first_lead.py`. It ingests an input file containing contact IDs, person names, company names, and products, then runs the research workflow for each record.
 
 
 See [research_agent/README.md](research_agent/README.md) for more details.

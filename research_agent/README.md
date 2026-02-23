@@ -50,25 +50,25 @@ Key Flags:
 
 ## Running a batch script
 
-The FDA 510(K) Batch Tool demonstrates the toolkit’s capability to handle high-volume, industry-specific datasets. Designed to process the FDA’s premarket submission data, this script automates the ingestion of tab-delimited records, applies geographic filtering (US-only), and executes the recursive discovery engine at scale. It transforms a "messy" regulatory spreadsheet into a structured lead list, outputting results directly to a CSV for seamless integration into CRM or database workflows.
+The Product Research Batch Tool demonstrates the toolkit’s capability to process high-volume contact datasets. This script ingests tab-delimited records, applies optional geographic filtering when a country column is present, and executes the recursive discovery engine at scale. It transforms raw contact lists into a structured lead list and outputs results directly to CSV or Supabase.
 
-The data input files for this test are available for download from the FDA website. The examples/fda_510k_research folder contains a downloaded sample, renamed to sample_input.txt (this file is automatically picked up when the --input flag is omitted). Keep in mind these files are tab-delimited so when opening in Excel you need to define the tab as a delimiter.
+The sample dataset is located in `examples/product_research/sample_input.txt` (used automatically when the `--input` flag is omitted). The preferred tab-delimited format is: `id`, `person`, `company`, `product`.
 
-Process the first 10 entries of the FDA dataset:
+Process the first 10 entries of the sample dataset:
 
 ```bash
-cd ai-marketing-toolkit/examples/fda_510k_research/
-./run_fda_batch.py --limit 10 --verbose
+cd ai-marketing-toolkit/examples/product_research/
+./batch_run.py --limit 10
 ```
 
-The results are saved to fda_research_results.csv in the same directory. This CSV file will contain discovered data including `knumber`, `fda_id`, `company`, `person`, `product`, `email`, and `source`.
+The results are saved to `research_results.csv` in the same directory. This CSV file contains discovered data including `record_id`, `company`, `person`, `product`, `email`, and `source`.
 
 Customization Options:
 
 ```bash
---limit [N]: Controls API usage by limiting the number of processed records (defaults to 10).
---input [510k_file]: Path to your tab-delimited dataset (defaults to sample_input.txt).
---verbose: Provides a live progress bar and detailed research status for each record in the batch.
+--limit [N]: Controls API usage by limiting the number of processed records (default: no limit).
+--input [contacts_file]: Path to your tab-delimited dataset (defaults to sample_input.txt).
+--output-mode [csv|supabase]: Selects whether output is written to CSV or inserted into Supabase.
 ```
 
 ## Log files
