@@ -1,11 +1,11 @@
-id,applicant,contact,email,source
-DEN240077,"Mureva Phototherapy, Inc.",Vedang  Kothari,info@murevapt.com,https://www.murevapt.com/contact-us/
-K242606,"Integrated Endoscopy, Inc.",Albert  Rego,albert@iescope.com,https://www.accessdata.fda.gov/cdrh_docs/pdf19/K191594.pdf
-K243131,Sigma Biomedical,Jorge  Millan,jmillan@sigmabiomedical.com,https://www.accessdata.fda.gov/cdrh_docs/pdf23/K233266.pdf
-K243753,"Roche Molecular Systems, Inc.",Khushvanreep  Singh,khushvanreep.singh@roche.com,https://www.accessdata.fda.gov/cdrh_docs/pdf24/K242485.pdf
-K243897,"Ethicon, Inc.",Anju  Malhotra,amalho13@its.jnj.com,https://www.accessdata.fda.gov/cdrh_docs/pdf24/K243897.pdf
-DEN250015,"Fusmobile, Inc.",Ron  Aginsky,ron@fusmobile.com,https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7415188/
-K250241,"Siemens Medical Solutions USA, Inc.",Patricia D. Jones,patricia.jones@siemens-healthineers.com,https://www.accessdata.fda.gov/cdrh_docs/pdf25/K251523.pdf
-K250264,"Bench7, Inc.",John  Persson,john@bench7tech.com,https://ndlegis.gov/assembly/68-2023/testimony/HAPP-2018-20230124-14331-F-PERSSON_JOHN.pdf
-K250376,"Viatherm Therapeutics, LLC",Maria  Fattore,support@regearlife.com,https://www.viathermtherapy.com/wp-content/uploads/2020/06/ReBound-IFU-Rev-G.pdf
-K250392,"Zap Surgical Systems, Inc.",Junyi  Wang,marka@zapsurgical.com,https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQF_DUhU7rbW1A0wQQfDlF5O1uPbxwClnSlE-g7yNAZLbIthAv-9wW8ReoPeHOgVO32dX0DTi3vUWYn71xuYdPOZHs454k7uGxmOnSlnc0r63rW16lqP_eUMZ_k9NiKbh27Wt_PNoD-wObRPX67yZn7m7h6vsTKYAgdpF9V652uj5x9s70HLVbEg1bBxX51fXEaccqbRlYUPXXDc4kkXWETQTGFQxxlET1sc9pOEgPpMoLuoPdvB3JhBhG7DY3Wzfvvp1dNlJtfw6tKwzV83vDYY0OzoDO6LSw==
+id,user_id,company,person,product,email,source
+100,100,"Vesalio, Inc.",Sharon  Shachar,NeVa PV Thrombectomy Device,info@vesalio.com,https://www.vesalio.com/vesalio-secures-class-a-funding/
+101,101,Karl Storz SE & Co.Kg,Jordan Lydia  Verla,Miniature Telescope for Urology (27033AA),Jordan.Verla@karlstorz.com,https://www.accessdata.fda.gov/cdrh_docs/pdf25/K253411.pdf
+102,102,"Nvision Biomedical Technologies, Inc.",Marisa  Zack,ToeJack MIS Bunion System,marisazink@nvisionbiomed.com,https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfpmn/pmn.cfm?ID=K232854
+103,103,"Fujifilm Sonosite, Inc.",Anoush  Frankian,Sonosite MT Ultrasound System,anoush.frankian@fujifilm.com,https://www.accessdata.fda.gov/cdrh_docs/pdf25/K251106.pdf
+104,104,"Siemens Medical Solutions USA, Inc.",Rapaka  Shilpa,ACUSON Juniper Diagnostic Ultrasound System; ACUSON Juniper Select Diagnostic Ultrasound System,Theresa.Gombar@siemens-healthineers.com,https://www.cassling.com/blog/siemens-healthineers-launches-acuson-juniper-next-generation-ultrasound-system
+105,105,"Motive Health, Inc.",Pete  Kilpatrick,Motiveï¿½ Muscle Stimulator for Lower Back (OT01-1003),support@mymotive.com,https://www.mymotive.com/pages/contact-us
+107,107,Siemens Healthineers AG,Vijay  Ramadas,syngo.MR Applications (VB80),vijay.ramadas@siemens-healthineers.com,https://www.accessdata.fda.gov/cdrh_docs/pdf24/K240294.pdf
+108,108,Premier Dental Products Company,Jessica  Huang,MultiMatch Flow Chameleon AntiMicrobial Composite,regulatory@premierdentalco.com,https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfRES/res.cfm?id=210514
+109,109,"Graphy, Inc.",Moon-Soo  Park,TERA HARZ Hard Denture (THD-C-500); TERA HARZ Hard Denture (THD-C-1000); TERA HARZ Hard Denture (THD-LP-500); TERA HARZ Hard Denture (THD-LP-1000); TERA HARZ Hard Denture (THD-P-500); TERA HARZ Hard Denture (THD-P-1000); TERA HARZ Hard Denture (THD-CP-500); TERA HARZ Hard Denture (THD-CP-1000),info@itgraphy.com,https://www.graphy3d.com/bbs/board.php?bo_table=faq_en
+110,110,"QuietLab, LLC",Candriella  Pietro,QuietLab Pro,support@tryquietlab.com,https://quietlab.com
