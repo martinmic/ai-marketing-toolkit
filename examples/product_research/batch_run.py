@@ -165,14 +165,8 @@ def get_first_present_value(row, candidates):
 
 def normalize_input_records(df):
     normalized_rows = []
-    non_us_skipped = 0
 
     for _, row in df.iterrows():
-        country_code = get_first_present_value(row, ["country_code", "COUNTRY_CODE"])
-        if country_code and country_code.upper() != "US":
-            non_us_skipped += 1
-            continue
-
         lead_id = get_first_present_value(row, ["id"])
         company = get_first_present_value(row, ["company", "applicant", "APPLICANT"])
         person = get_first_present_value(row, ["person", "contact", "CONTACT"])
@@ -190,7 +184,7 @@ def normalize_input_records(df):
             }
         )
 
-    return normalized_rows, non_us_skipped
+    return normalized_rows
 
 
 def process_product_research_list(
@@ -212,12 +206,12 @@ def process_product_research_list(
         return
 
     initial_count = len(df)
-    normalized_rows, non_us_skipped = normalize_input_records(df)
-    skipped_incomplete = initial_count - len(normalized_rows) - non_us_skipped
+    normalized_rows = normalize_input_records(df)
+    skipped_incomplete = initial_count - len(normalized_rows)
 
     print(
         f"Loaded {initial_count} records. "
-        f"Skipped {non_us_skipped} non-US and {max(skipped_incomplete, 0)} incomplete entries."
+        f"Skipped {max(skipped_incomplete, 0)} incomplete entries."
     )
     if test_mode:
         print("Running in test mode: skipping research_contact and using placeholder@email.com")
